@@ -17,18 +17,17 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
 .chat { height:250px; overflow-y:auto; background:#1a1f26; padding:10px; }
 .thread { padding:8px; border-bottom:1px solid #333; cursor:pointer; }
 .thread:hover { background:#1a1f26; }
-.admin { background:#300; }
 .group { padding:6px; border-bottom:1px solid #333; }
 </style>
 </head>
 <body>
 
 <nav id="topNav" class="hidden">
-  <span onclick="showTab('profileTab')">Profile</span>
-  <span onclick="showTab('groupsTab')">Groups</span>
-  <span onclick="showTab('forumTab')">Forum</span>
-  <span onclick="showTab('devTab')">Development Updates</span>
-  <span onclick="logout()">Logout</span>
+  <span id="tabProfile">Profile</span>
+  <span id="tabGroups">Groups</span>
+  <span id="tabForum">Forum</span>
+  <span id="tabDev">Development Updates</span>
+  <span id="logoutBtn">Logout</span>
 </nav>
 
 <div id="auth">
@@ -36,7 +35,7 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
     <h3>Login</h3>
     <input id="loginUser" placeholder="Email">
     <input id="loginPass" type="password" placeholder="Password">
-     <button id="loginBtn">Login</button>
+    <button id="loginBtn">Login</button>
   </div>
 
   <div class="card">
@@ -44,13 +43,12 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
     <input id="regUser" placeholder="Email">
     <input id="regPass" type="password" placeholder="Password">
     <input id="invite" placeholder="Invite Code">
-    <button onclick="register()">Register</button>
+    <button id="registerBtn">Register</button>
   </div>
 </div>
 
 <div id="app" class="hidden">
 
-<!-- PROFILE -->
 <div id="profileTab" class="tab card">
   <h3>Profile</h3>
   Email: <span id="profileEmail"></span><br>
@@ -58,18 +56,16 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
   Role: <span id="profileRole"></span>
 </div>
 
-<!-- GROUPS -->
 <div id="groupsTab" class="tab card hidden">
   <h3>Groups</h3>
   <div id="groupsList"></div>
 </div>
 
-<!-- FORUM -->
 <div id="forumTab" class="tab card hidden">
   <h3>Create Thread</h3>
   <input id="threadTitle" placeholder="Title">
   <textarea id="threadDesc" placeholder="Description"></textarea>
-  <button onclick="createThread()">Create</button>
+  <button id="createThreadBtn">Create</button>
 
   <h3>Threads</h3>
   <div id="threads"></div>
@@ -79,26 +75,24 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
     <p id="viewDesc"></p>
     <div id="posts"></div>
     <textarea id="replyBox" placeholder="Reply"></textarea>
-    <button onclick="reply()">Reply</button>
+    <button id="replyBtn">Reply</button>
   </div>
 </div>
 
-<!-- DEV UPDATES -->
 <div id="devTab" class="tab card hidden">
   <h3>Post Update (Admins Only)</h3>
   <div id="devCreate" class="hidden">
     <textarea id="devContent"></textarea>
-    <button onclick="postDev()">Post</button>
+    <button id="devPostBtn">Post</button>
   </div>
   <div id="devPosts"></div>
 </div>
 
-<!-- CHAT -->
 <div class="card">
   <h3>Global Chat</h3>
   <div id="chat" class="chat"></div>
   <input id="chatInput">
-  <button onclick="sendChat()">Send</button>
+  <button id="chatBtn">Send</button>
 </div>
 
 </div>
@@ -111,13 +105,13 @@ const supabase = window.supabase.createClient(
 
 let currentUser, profile, activeThread;
 
-/* ---------------- TABS ---------------- */
+/* ---------- TAB SWITCH ---------- */
 function showTab(id){
   document.querySelectorAll(".tab").forEach(t=>t.classList.add("hidden"));
   document.getElementById(id).classList.remove("hidden");
 }
 
-/* ---------------- AUTH ---------------- */
+/* ---------- AUTH ---------- */
 async function register(){
   const { error } = await supabase.auth.signUp({
     email: regUser.value,
@@ -142,7 +136,7 @@ async function logout(){
   location.reload();
 }
 
-/* ---------------- INIT ---------------- */
+/* ---------- INIT ---------- */
 async function init(){
   const { data:{ session } } = await supabase.auth.getSession();
   if(!session) return;
@@ -162,7 +156,7 @@ async function init(){
       role:"user"
     });
   }
-document.getElementById("loginBtn").addEventListener("click", login);
+
   const { data } = await supabase
     .from("profiles")
     .select("*")
@@ -187,23 +181,19 @@ document.getElementById("loginBtn").addEventListener("click", login);
   loadChat();
   loadGroups();
   loadDev();
-
-  realtimeChat();
-  realtimeThreads();
+  setupRealtime();
 }
 
-/* ---------------- REALTIME CHAT ---------------- */
-function realtimeChat(){
+/* ---------- REALTIME ---------- */
+function setupRealtime(){
   supabase.channel("chat-live")
   .on("postgres_changes",
     { event:"INSERT", schema:"public", table:"chat_messages" },
-    payload => {
-      addChatMessage(payload.new);
-    }
+    payload => addChat(payload.new)
   ).subscribe();
 }
 
-function addChatMessage(msg){
+function addChat(msg){
   chat.innerHTML += `<div><b>${msg.username}</b>: ${msg.content}</div>`;
   chat.scrollTop = chat.scrollHeight;
 }
@@ -215,7 +205,7 @@ async function loadChat(){
     .order("created_at");
 
   chat.innerHTML="";
-  data.forEach(addChatMessage);
+  data.forEach(addChat);
 }
 
 async function sendChat(){
@@ -230,15 +220,7 @@ async function sendChat(){
   chatInput.value="";
 }
 
-/* ---------------- THREADS ---------------- */
-function realtimeThreads(){
-  supabase.channel("threads-live")
-  .on("postgres_changes",
-    { event:"INSERT", schema:"public", table:"threads" },
-    ()=>loadThreads()
-  ).subscribe();
-}
-
+/* ---------- THREADS ---------- */
 async function createThread(){
   await supabase.from("threads").insert({
     title: threadTitle.value,
@@ -247,6 +229,7 @@ async function createThread(){
   });
   threadTitle.value="";
   threadDesc.value="";
+  loadThreads();
 }
 
 async function loadThreads(){
@@ -257,10 +240,11 @@ async function loadThreads(){
 
   threads.innerHTML="";
   data.forEach(t=>{
-    threads.innerHTML+=`
-      <div class="thread" onclick="openThread('${t.id}')">
-        <b>${t.title}</b><br>${t.description}
-      </div>`;
+    const div=document.createElement("div");
+    div.className="thread";
+    div.innerHTML=`<b>${t.title}</b><br>${t.description}`;
+    div.addEventListener("click",()=>openThread(t.id));
+    threads.appendChild(div);
   });
 }
 
@@ -302,16 +286,19 @@ async function reply(){
   loadPosts();
 }
 
-/* ---------------- GROUPS ---------------- */
+/* ---------- GROUPS ---------- */
 async function loadGroups(){
   const { data } = await supabase.from("groups").select("*");
   groupsList.innerHTML="";
   data.forEach(g=>{
-    groupsList.innerHTML+=`
-      <div class="group">
-        <img src="${g.logo}" width="30"> ${g.name}
-        <button onclick="requestJoin('${g.id}')">Request</button>
-      </div>`;
+    const div=document.createElement("div");
+    div.className="group";
+    div.innerHTML=`<img src="${g.logo}" width="30"> ${g.name}`;
+    const btn=document.createElement("button");
+    btn.textContent="Request";
+    btn.addEventListener("click",()=>requestJoin(g.id));
+    div.appendChild(btn);
+    groupsList.appendChild(div);
   });
 }
 
@@ -323,9 +310,9 @@ async function requestJoin(groupId){
   alert("Request sent.");
 }
 
-/* ---------------- DEV UPDATES ---------------- */
+/* ---------- DEV UPDATES ---------- */
 async function postDev(){
-  if(profile.role !== "admin") return;
+  if(profile.role!=="admin") return;
 
   await supabase.from("dev_updates").insert({
     content:devContent.value
@@ -346,9 +333,22 @@ async function loadDev(){
   });
 }
 
+/* ---------- EVENTS ---------- */
+document.getElementById("loginBtn").addEventListener("click",login);
+document.getElementById("registerBtn").addEventListener("click",register);
+document.getElementById("logoutBtn").addEventListener("click",logout);
+document.getElementById("chatBtn").addEventListener("click",sendChat);
+document.getElementById("createThreadBtn").addEventListener("click",createThread);
+document.getElementById("replyBtn").addEventListener("click",reply);
+document.getElementById("devPostBtn").addEventListener("click",postDev);
+
+document.getElementById("tabProfile").addEventListener("click",()=>showTab("profileTab"));
+document.getElementById("tabGroups").addEventListener("click",()=>showTab("groupsTab"));
+document.getElementById("tabForum").addEventListener("click",()=>showTab("forumTab"));
+document.getElementById("tabDev").addEventListener("click",()=>showTab("devTab"));
+
 init();
 </script>
 
 </body>
 </html>
-
