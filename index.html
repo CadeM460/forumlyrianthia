@@ -4,26 +4,31 @@
 <meta charset="UTF-8">
 <title>Lyrianthia Forum</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
 body { background:#0b0f14; color:white; font-family:Arial; margin:0; }
-nav { background:#111; padding:15px; display:flex; justify-content:space-between; }
+nav { background:#111; padding:15px; display:flex; gap:20px; }
+nav span { cursor:pointer; }
 button { padding:6px 10px; margin-top:5px; cursor:pointer; }
 input, textarea { padding:6px; width:100%; margin:5px 0; }
 .card { background:#111; padding:15px; margin:15px; border-radius:8px; }
 .hidden { display:none; }
-.chat { height:200px; overflow-y:auto; background:#1a1f26; padding:10px; }
-.thread { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
-.admin { background:#300; padding:10px; }
+.chat { height:250px; overflow-y:auto; background:#1a1f26; padding:10px; }
+.thread { padding:8px; border-bottom:1px solid #333; cursor:pointer; }
+.thread:hover { background:#1a1f26; }
+.admin { background:#300; }
+.group { padding:6px; border-bottom:1px solid #333; }
 </style>
 </head>
 <body>
 
-<nav>
-  <div>Lyrianthia Forum</div>
-  <div id="navUser"></div>
+<nav id="topNav" class="hidden">
+  <span onclick="showTab('profileTab')">Profile</span>
+  <span onclick="showTab('groupsTab')">Groups</span>
+  <span onclick="showTab('forumTab')">Forum</span>
+  <span onclick="showTab('devTab')">Development Updates</span>
+  <span onclick="logout()">Logout</span>
 </nav>
 
 <div id="auth">
@@ -31,7 +36,7 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
     <h3>Login</h3>
     <input id="loginUser" placeholder="Email">
     <input id="loginPass" type="password" placeholder="Password">
-    <button id="loginBtn">Login</button>
+    <button onclick="login()">Login</button>
   </div>
 
   <div class="card">
@@ -39,108 +44,88 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
     <input id="regUser" placeholder="Email">
     <input id="regPass" type="password" placeholder="Password">
     <input id="invite" placeholder="Invite Code">
-    <button id="registerBtn">Register</button>
+    <button onclick="register()">Register</button>
   </div>
 </div>
 
 <div id="app" class="hidden">
 
-  <div class="card">
-    <h3>Profile</h3>
-    Email: <span id="profileEmail"></span><br>
-    Username: <span id="profileUsername"></span><br>
-    Role: <span id="profileRole"></span>
-  </div>
+<!-- PROFILE -->
+<div id="profileTab" class="tab card">
+  <h3>Profile</h3>
+  Email: <span id="profileEmail"></span><br>
+  Username: <span id="profileUsername"></span><br>
+  Role: <span id="profileRole"></span>
+</div>
 
-  <div class="card">
-    <h3>Create Thread</h3>
-    <input id="threadTitle" placeholder="Thread title">
-    <button id="createThreadBtn">Create</button>
-  </div>
+<!-- GROUPS -->
+<div id="groupsTab" class="tab card hidden">
+  <h3>Groups</h3>
+  <div id="groupsList"></div>
+</div>
 
-  <div class="card">
-    <h3>Threads</h3>
-    <div id="threads"></div>
-  </div>
+<!-- FORUM -->
+<div id="forumTab" class="tab card hidden">
+  <h3>Create Thread</h3>
+  <input id="threadTitle" placeholder="Title">
+  <textarea id="threadDesc" placeholder="Description"></textarea>
+  <button onclick="createThread()">Create</button>
 
-  <div class="card">
-    <h3>Posts</h3>
+  <h3>Threads</h3>
+  <div id="threads"></div>
+
+  <div id="threadView" class="hidden">
+    <h3 id="viewTitle"></h3>
+    <p id="viewDesc"></p>
     <div id="posts"></div>
-    <textarea id="postContent" placeholder="Reply..."></textarea>
-    <button id="replyBtn">Reply</button>
+    <textarea id="replyBox" placeholder="Reply"></textarea>
+    <button onclick="reply()">Reply</button>
   </div>
+</div>
 
-  <div class="card">
-    <h3>Global Chat</h3>
-    <div id="chat" class="chat"></div>
-    <input id="chatInput" placeholder="Message">
-    <button id="chatBtn">Send</button>
+<!-- DEV UPDATES -->
+<div id="devTab" class="tab card hidden">
+  <h3>Post Update (Admins Only)</h3>
+  <div id="devCreate" class="hidden">
+    <textarea id="devContent"></textarea>
+    <button onclick="postDev()">Post</button>
   </div>
+  <div id="devPosts"></div>
+</div>
 
-  <div id="adminPanel" class="card admin hidden">
-    <h3>Admin Panel</h3>
-
-    <input id="banUserInput" placeholder="Username to ban">
-    <button id="banBtn">Ban User</button>
-
-    <input id="chatbanUserInput" placeholder="Username to chatban">
-    <button id="chatbanBtn">Chatban User</button>
-
-    <input id="roleUserInput" placeholder="Username">
-    <select id="roleSelect">
-      <option value="user">User</option>
-      <option value="staff">Staff</option>
-      <option value="admin">Admin</option>
-    </select>
-    <button id="setRoleBtn">Set Role</button>
-  </div>
-
-  <button id="logoutBtn">Logout</button>
+<!-- CHAT -->
+<div class="card">
+  <h3>Global Chat</h3>
+  <div id="chat" class="chat"></div>
+  <input id="chatInput">
+  <button onclick="sendChat()">Send</button>
+</div>
 
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", async () => {
-
 const supabase = window.supabase.createClient(
   "https://vzcofzfwjiswobrmdpvz.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6Y29memZ3amlzd29icm1kcHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1ODM0NDAsImV4cCI6MjA4NjE1OTQ0MH0.82RKlpOrVMTg3CPZOIx4_R6-6KoK8FUs9mp1i32VBN4"
 );
 
-let currentUser = null;
-let profile = null;
-let activeThread = null;
+let currentUser, profile, activeThread;
 
-/* ================= AUTH ================= */
+/* ---------------- TABS ---------------- */
+function showTab(id){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+}
 
+/* ---------------- AUTH ---------------- */
 async function register(){
-  const email = regUser.value;
-  const password = regPass.value;
-  const inviteCode = invite.value;
-
-  const { data: inviteCheck } = await supabase
-    .from("invite_codes")
-    .select("*")
-    .eq("code", inviteCode)
-    .eq("active", true)
-    .single();
-
-  if(!inviteCheck){
-    alert("Invalid invite code.");
-    return;
-  }
-
   const { error } = await supabase.auth.signUp({
-    email,
-    password
+    email: regUser.value,
+    password: regPass.value,
+    options: { emailRedirectTo: window.location.origin }
   });
-
-  if(error){
-    alert(error.message);
-    return;
-  }
-
-  alert("Check your email to confirm your account.");
+  if(error) alert(error.message);
+  else alert("Check your email to confirm.");
 }
 
 async function login(){
@@ -148,7 +133,6 @@ async function login(){
     email: loginUser.value,
     password: loginPass.value
   });
-
   if(error) alert(error.message);
   else location.reload();
 }
@@ -158,15 +142,13 @@ async function logout(){
   location.reload();
 }
 
-/* ================= INIT USER ================= */
-
+/* ---------------- INIT ---------------- */
 async function init(){
   const { data:{ session } } = await supabase.auth.getSession();
   if(!session) return;
 
   currentUser = session.user;
 
-  // Auto-create profile if missing
   const { data: existing } = await supabase
     .from("profiles")
     .select("*")
@@ -177,7 +159,7 @@ async function init(){
     await supabase.from("profiles").insert({
       id: currentUser.id,
       username: currentUser.email.split("@")[0],
-      role: "user"
+      role:"user"
     });
   }
 
@@ -187,42 +169,84 @@ async function init(){
     .eq("id", currentUser.id)
     .single();
 
-  if(data.banned){
-    alert("You are banned.");
-    await logout();
-    return;
-  }
-
   profile = data;
 
   auth.classList.add("hidden");
   app.classList.remove("hidden");
+  topNav.classList.remove("hidden");
 
   profileEmail.innerText = currentUser.email;
   profileUsername.innerText = profile.username;
   profileRole.innerText = profile.role;
-  navUser.innerText = profile.username;
 
-  if(profile.role === "admin" || profile.role === "staff"){
-    adminPanel.classList.remove("hidden");
+  if(profile.role === "admin"){
+    devCreate.classList.remove("hidden");
   }
 
   loadThreads();
   loadChat();
+  loadGroups();
+  loadDev();
+
+  realtimeChat();
+  realtimeThreads();
 }
 
-/* ================= THREADS ================= */
+/* ---------------- REALTIME CHAT ---------------- */
+function realtimeChat(){
+  supabase.channel("chat-live")
+  .on("postgres_changes",
+    { event:"INSERT", schema:"public", table:"chat_messages" },
+    payload => {
+      addChatMessage(payload.new);
+    }
+  ).subscribe();
+}
 
-async function createThread(){
-  if(!threadTitle.value) return;
+function addChatMessage(msg){
+  chat.innerHTML += `<div><b>${msg.username}</b>: ${msg.content}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+}
 
-  await supabase.from("threads").insert({
-    title: threadTitle.value,
-    creator_id: currentUser.id
+async function loadChat(){
+  const { data } = await supabase
+    .from("chat_messages")
+    .select("*")
+    .order("created_at");
+
+  chat.innerHTML="";
+  data.forEach(addChatMessage);
+}
+
+async function sendChat(){
+  if(profile.chatbanned) return alert("Chat banned.");
+
+  await supabase.from("chat_messages").insert({
+    user_id: currentUser.id,
+    username: profile.username,
+    content: chatInput.value
   });
 
+  chatInput.value="";
+}
+
+/* ---------------- THREADS ---------------- */
+function realtimeThreads(){
+  supabase.channel("threads-live")
+  .on("postgres_changes",
+    { event:"INSERT", schema:"public", table:"threads" },
+    ()=>loadThreads()
+  ).subscribe();
+}
+
+async function createThread(){
+  await supabase.from("threads").insert({
+    title: threadTitle.value,
+    description: threadDesc.value,
+    creator_id: currentUser.id
+  });
   threadTitle.value="";
-  loadThreads();
+  threadDesc.value="";
 }
 
 async function loadThreads(){
@@ -233,127 +257,96 @@ async function loadThreads(){
 
   threads.innerHTML="";
   data.forEach(t=>{
-    const div=document.createElement("div");
-    div.className="thread";
-    div.innerText=t.title;
-    div.onclick=()=>openThread(t.id);
-    threads.appendChild(div);
+    threads.innerHTML+=`
+      <div class="thread" onclick="openThread('${t.id}')">
+        <b>${t.title}</b><br>${t.description}
+      </div>`;
   });
 }
 
 async function openThread(id){
   activeThread=id;
+  const { data } = await supabase
+    .from("threads")
+    .select("*")
+    .eq("id",id)
+    .single();
+
+  viewTitle.innerText=data.title;
+  viewDesc.innerText=data.description;
+  threadView.classList.remove("hidden");
   loadPosts();
 }
 
 async function loadPosts(){
-  if(!activeThread) return;
-
   const { data } = await supabase
     .from("posts")
-    .select("content, profiles(username)")
-    .eq("thread_id", activeThread)
+    .select("*")
+    .eq("thread_id",activeThread)
     .order("created_at");
 
   posts.innerHTML="";
   data.forEach(p=>{
-    posts.innerHTML+=`<div><b>${p.profiles.username}:</b> ${p.content}</div>`;
+    posts.innerHTML+=`<div><b>${p.username}</b>: ${p.content}</div>`;
   });
 }
 
 async function reply(){
-  if(!activeThread || !postContent.value) return;
-
   await supabase.from("posts").insert({
-    thread_id: activeThread,
-    author_id: currentUser.id,
-    content: postContent.value
+    thread_id:activeThread,
+    author_id:currentUser.id,
+    username:profile.username,
+    content:replyBox.value
   });
-
-  postContent.value="";
+  replyBox.value="";
   loadPosts();
 }
 
-/* ================= CHAT ================= */
+/* ---------------- GROUPS ---------------- */
+async function loadGroups(){
+  const { data } = await supabase.from("groups").select("*");
+  groupsList.innerHTML="";
+  data.forEach(g=>{
+    groupsList.innerHTML+=`
+      <div class="group">
+        <img src="${g.logo}" width="30"> ${g.name}
+        <button onclick="requestJoin('${g.id}')">Request</button>
+      </div>`;
+  });
+}
 
-async function loadChat(){
+async function requestJoin(groupId){
+  await supabase.from("group_requests").insert({
+    user_id:currentUser.id,
+    group_id:groupId
+  });
+  alert("Request sent.");
+}
+
+/* ---------------- DEV UPDATES ---------------- */
+async function postDev(){
+  if(profile.role !== "admin") return;
+
+  await supabase.from("dev_updates").insert({
+    content:devContent.value
+  });
+  devContent.value="";
+  loadDev();
+}
+
+async function loadDev(){
   const { data } = await supabase
-    .from("chat_messages")
-    .select("content, profiles(username)")
-    .order("created_at");
+    .from("dev_updates")
+    .select("*")
+    .order("created_at",{ascending:false});
 
-  chat.innerHTML="";
-  data.forEach(m=>{
-    chat.innerHTML+=`<div><b>${m.profiles.username}:</b> ${m.content}</div>`;
+  devPosts.innerHTML="";
+  data.forEach(d=>{
+    devPosts.innerHTML+=`<div>${d.content}</div><hr>`;
   });
 }
-
-async function sendChat(){
-  if(profile.chatbanned){
-    alert("You are chat banned.");
-    return;
-  }
-
-  if(!chatInput.value) return;
-
-  await supabase.from("chat_messages").insert({
-    user_id: currentUser.id,
-    content: chatInput.value
-  });
-
-  chatInput.value="";
-}
-
-/* ================= ADMIN ================= */
-
-async function banUser(){
-  await supabase
-    .from("profiles")
-    .update({ banned:true })
-    .eq("username", banUserInput.value);
-
-  alert("User banned.");
-}
-
-async function chatbanUser(){
-  await supabase
-    .from("profiles")
-    .update({ chatbanned:true })
-    .eq("username", chatbanUserInput.value);
-
-  alert("User chatbanned.");
-}
-
-async function setRole(){
-  await supabase
-    .from("profiles")
-    .update({ role: roleSelect.value })
-    .eq("username", roleUserInput.value);
-
-  alert("Role updated.");
-}
-
-/* ================= EVENTS ================= */
-
-registerBtn.onclick=register;
-loginBtn.onclick=login;
-logoutBtn.onclick=logout;
-createThreadBtn.onclick=createThread;
-replyBtn.onclick=reply;
-chatBtn.onclick=sendChat;
-banBtn.onclick=banUser;
-chatbanBtn.onclick=chatbanUser;
-setRoleBtn.onclick=setRole;
-
-supabase.channel("chat")
-.on("postgres_changes",
-  { event:"INSERT", schema:"public", table:"chat_messages" },
-  ()=>loadChat()
-).subscribe();
 
 init();
-
-});
 </script>
 
 </body>
