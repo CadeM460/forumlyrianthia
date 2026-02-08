@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Lyrianthia Forum</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body { background:#0b0f14; color:white; font-family:Arial; margin:0; }
+nav { background:#111; padding:15px; display:flex; justify-content:space-between; }
+button { padding:6px 10px; margin-top:5px; cursor:pointer; }
+input, textarea { padding:6px; width:100%; margin:5px 0; }
+.card { background:#111; padding:15px; margin:15px; border-radius:8px; }
+.hidden { display:none; }
+.chat { height:200px; overflow-y:auto; background:#1a1f26; padding:10px; }
+.thread { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
+.admin { background:#300; padding:10px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div>Lyrianthia Forum</div>
+  <div id="navUser"></div>
+</nav>
+
+<div id="auth">
+  <div class="card">
+    <h3>Login</h3>
+    <input id="loginUser" placeholder="Email">
+    <input id="loginPass" type="password" placeholder="Password">
+    <button id="loginBtn">Login</button>
+  </div>
+
+  <div class="card">
+    <h3>Register</h3>
+    <input id="regUser" placeholder="Email">
+    <input id="regPass" type="password" placeholder="Password">
+    <input id="invite" placeholder="Invite Code">
+    <button id="registerBtn">Register</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+
+  <div class="card">
+    <h3>Profile</h3>
+    Email: <span id="profileEmail"></span><br>
+    Username: <span id="profileUsername"></span><br>
+    Role: <span id="profileRole"></span>
+  </div>
+
+  <div class="card">
+    <h3>Create Thread</h3>
+    <input id="threadTitle" placeholder="Thread title">
+    <button id="createThreadBtn">Create</button>
+  </div>
+
+  <div class="card">
+    <h3>Threads</h3>
+    <div id="threads"></div>
+  </div>
+
+  <div class="card">
+    <h3>Posts</h3>
+    <div id="posts"></div>
+    <textarea id="postContent" placeholder="Reply..."></textarea>
+    <button id="replyBtn">Reply</button>
+  </div>
+
+  <div class="card">
+    <h3>Global Chat</h3>
+    <div id="chat" class="chat"></div>
+    <input id="chatInput" placeholder="Message">
+    <button id="chatBtn">Send</button>
+  </div>
+
+  <div id="adminPanel" class="card admin hidden">
+    <h3>Admin Panel</h3>
+
+    <input id="banUserInput" placeholder="Username to ban">
+    <button id="banBtn">Ban User</button>
+
+    <input id="chatbanUserInput" placeholder="Username to chatban">
+    <button id="chatbanBtn">Chatban User</button>
+
+    <input id="roleUserInput" placeholder="Username">
+    <select id="roleSelect">
+      <option value="user">User</option>
+      <option value="staff">Staff</option>
+      <option value="admin">Admin</option>
+    </select>
+    <button id="setRoleBtn">Set Role</button>
+  </div>
+
+  <button id="logoutBtn">Logout</button>
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+
+const supabase = window.supabase.createClient(
+  "https://vzcofzfwjiswobrmdpvz.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6Y29memZ3amlzd29icm1kcHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1ODM0NDAsImV4cCI6MjA4NjE1OTQ0MH0.82RKlpOrVMTg3CPZOIx4_R6-6KoK8FUs9mp1i32VBN4"
+);
+
+let currentUser = null;
+let profile = null;
+let activeThread = null;
+
+/* ================= AUTH ================= */
+
+async function register(){
+  const email = regUser.value;
+  const password = regPass.value;
+  const inviteCode = invite.value;
+
+  const { data: inviteCheck } = await supabase
+    .from("invite_codes")
+    .select("*")
+    .eq("code", inviteCode)
+    .eq("active", true)
+    .single();
+
+  if(!inviteCheck){
+    alert("Invalid invite code.");
+    return;
+  }
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password
+  });
+
+  if(error){
+    alert(error.message);
+    return;
+  }
+
+  alert("Check your email to confirm your account.");
+}
+
+async function login(){
+  const { error } = await supabase.auth.signInWithPassword({
+    email: loginUser.value,
+    password: loginPass.value
+  });
+
+  if(error) alert(error.message);
+  else location.reload();
+}
+
+async function logout(){
+  await supabase.auth.signOut();
+  location.reload();
+}
+
+/* ================= INIT USER ================= */
+
+async function init(){
+  const { data:{ session } } = await supabase.auth.getSession();
+  if(!session) return;
+
+  currentUser = session.user;
+
+  // Auto-create profile if missing
+  const { data: existing } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", currentUser.id)
+    .single();
+
+  if(!existing){
+    await supabase.from("profiles").insert({
+      id: currentUser.id,
+      username: currentUser.email.split("@")[0],
+      role: "user"
+    });
+  }
+
+  const { data } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", currentUser.id)
+    .single();
+
+  if(data.banned){
+    alert("You are banned.");
+    await logout();
+    return;
+  }
+
+  profile = data;
+
+  auth.classList.add("hidden");
+  app.classList.remove("hidden");
+
+  profileEmail.innerText = currentUser.email;
+  profileUsername.innerText = profile.username;
+  profileRole.innerText = profile.role;
+  navUser.innerText = profile.username;
+
+  if(profile.role === "admin" || profile.role === "staff"){
+    adminPanel.classList.remove("hidden");
+  }
+
+  loadThreads();
+  loadChat();
+}
+
+/* ================= THREADS ================= */
+
+async function createThread(){
+  if(!threadTitle.value) return;
+
+  await supabase.from("threads").insert({
+    title: threadTitle.value,
+    creator_id: currentUser.id
+  });
+
+  threadTitle.value="";
+  loadThreads();
+}
+
+async function loadThreads(){
+  const { data } = await supabase
+    .from("threads")
+    .select("*")
+    .order("created_at",{ascending:false});
+
+  threads.innerHTML="";
+  data.forEach(t=>{
+    const div=document.createElement("div");
+    div.className="thread";
+    div.innerText=t.title;
+    div.onclick=()=>openThread(t.id);
+    threads.appendChild(div);
+  });
+}
+
+async function openThread(id){
+  activeThread=id;
+  loadPosts();
+}
+
+async function loadPosts(){
+  if(!activeThread) return;
+
+  const { data } = await supabase
+    .from("posts")
+    .select("content, profiles(username)")
+    .eq("thread_id", activeThread)
+    .order("created_at");
+
+  posts.innerHTML="";
+  data.forEach(p=>{
+    posts.innerHTML+=`<div><b>${p.profiles.username}:</b> ${p.content}</div>`;
+  });
+}
+
+async function reply(){
+  if(!activeThread || !postContent.value) return;
+
+  await supabase.from("posts").insert({
+    thread_id: activeThread,
+    author_id: currentUser.id,
+    content: postContent.value
+  });
+
+  postContent.value="";
+  loadPosts();
+}
+
+/* ================= CHAT ================= */
+
+async function loadChat(){
+  const { data } = await supabase
+    .from("chat_messages")
+    .select("content, profiles(username)")
+    .order("created_at");
+
+  chat.innerHTML="";
+  data.forEach(m=>{
+    chat.innerHTML+=`<div><b>${m.profiles.username}:</b> ${m.content}</div>`;
+  });
+}
+
+async function sendChat(){
+  if(profile.chatbanned){
+    alert("You are chat banned.");
+    return;
+  }
+
+  if(!chatInput.value) return;
+
+  await supabase.from("chat_messages").insert({
+    user_id: currentUser.id,
+    content: chatInput.value
+  });
+
+  chatInput.value="";
+}
+
+/* ================= ADMIN ================= */
+
+async function banUser(){
+  await supabase
+    .from("profiles")
+    .update({ banned:true })
+    .eq("username", banUserInput.value);
+
+  alert("User banned.");
+}
+
+async function chatbanUser(){
+  await supabase
+    .from("profiles")
+    .update({ chatbanned:true })
+    .eq("username", chatbanUserInput.value);
+
+  alert("User chatbanned.");
+}
+
+async function setRole(){
+  await supabase
+    .from("profiles")
+    .update({ role: roleSelect.value })
+    .eq("username", roleUserInput.value);
+
+  alert("Role updated.");
+}
+
+/* ================= EVENTS ================= */
+
+registerBtn.onclick=register;
+loginBtn.onclick=login;
+logoutBtn.onclick=logout;
+createThreadBtn.onclick=createThread;
+replyBtn.onclick=reply;
+chatBtn.onclick=sendChat;
+banBtn.onclick=banUser;
+chatbanBtn.onclick=chatbanUser;
+setRoleBtn.onclick=setRole;
+
+supabase.channel("chat")
+.on("postgres_changes",
+  { event:"INSERT", schema:"public", table:"chat_messages" },
+  ()=>loadChat()
+).subscribe();
+
+init();
+
+});
+</script>
+
+</body>
+</html>
