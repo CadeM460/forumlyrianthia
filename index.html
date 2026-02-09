@@ -2,143 +2,291 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Lyrianthian Forums</title>
+<title>Lyrianthia Forum</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
-body { background:#0b0f14; color:white; font-family:Arial; margin:0; }
-.card { background:#111; padding:15px; margin:15px; border-radius:8px; }
+body { background:#0f141a; color:#e6edf3; font-family:Arial; margin:0; }
+.topbar { background:#161b22; padding:15px; display:flex; justify-content:space-between; }
+.tabs button { background:none; border:none; color:#aaa; margin-right:15px; cursor:pointer; }
+.tabs button:hover { color:white; }
+.container { padding:20px; max-width:1000px; margin:auto; }
+.card { background:#161b22; padding:15px; border-radius:8px; margin-bottom:15px; }
 .hidden { display:none; }
-.chat { height:200px; overflow-y:auto; background:#1a1f26; padding:10px; }
-button { padding:6px 10px; margin-top:5px; cursor:pointer; }
-input { padding:6px; width:100%; margin:5px 0; }
+input, textarea { width:100%; padding:8px; margin:5px 0; background:#0d1117; border:1px solid #30363d; color:white; }
+button { padding:6px 12px; background:#238636; border:none; color:white; cursor:pointer; border-radius:5px; }
+button:hover { opacity:.85; }
+.thread { cursor:pointer; padding:10px; border-bottom:1px solid #30363d; }
+.thread:hover { background:#1f242c; }
+.reply { border-bottom:1px solid #30363d; padding:8px 0; }
+.small { opacity:.6; font-size:.85em; }
 </style>
 </head>
 <body>
 
-<div id="auth">
+<div class="topbar">
+  <div class="tabs">
+    <button onclick="showTab('home')">Home</button>
+    <button onclick="showTab('groups')">Groups</button>
+    <button onclick="showTab('dev')">Development Updates</button>
+    <button onclick="showTab('profile')">Profile</button>
+  </div>
+  <div id="authArea"></div>
+</div>
+
+<div class="container">
+
+<div id="authPage">
   <div class="card">
     <h3>Login</h3>
     <input id="loginEmail" placeholder="Email">
-    <input id="loginPassword" type="password" placeholder="Password">
-    <button id="loginBtn">Login</button>
+    <input id="loginPass" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
   </div>
 
   <div class="card">
     <h3>Register</h3>
     <input id="regEmail" placeholder="Email">
-    <input id="regPassword" type="password" placeholder="Password">
-    <button id="registerBtn">Register</button>
+    <input id="regPass" type="password" placeholder="Password">
+    <input id="regUser" placeholder="Username">
+    <button onclick="register()">Register</button>
   </div>
 </div>
 
 <div id="app" class="hidden">
-  <div class="card">
-    <h3>Chat</h3>
-    <div id="chat" class="chat"></div>
-    <input id="chatInput">
-    <button id="chatBtn">Send</button>
+
+  <div id="homeTab">
+    <div class="card">
+      <h3>Create Thread</h3>
+      <input id="threadTitle" placeholder="Thread Title">
+      <textarea id="threadDesc" placeholder="Description"></textarea>
+      <button onclick="createThread()">Post</button>
+    </div>
+    <div id="threadList"></div>
   </div>
+
+  <div id="threadView" class="hidden"></div>
+
+  <div id="groupsTab" class="hidden"></div>
+
+  <div id="devTab" class="hidden">
+    <div id="devCreate" class="card hidden">
+      <h3>Post Development Update</h3>
+      <input id="devTitle" placeholder="Title">
+      <textarea id="devDesc"></textarea>
+      <button onclick="postDev()">Post</button>
+    </div>
+    <div id="devList"></div>
+  </div>
+
+  <div id="profileTab" class="hidden"></div>
+
+</div>
+
 </div>
 
 <script>
-(function(){
-
-// Prevent duplicate declaration
-if (window._supabaseInitialized) return;
-window._supabaseInitialized = true;
-
-const supabaseClient = window.supabase.createClient(
+const supabase = window.supabase.createClient(
   "https://vzcofzfwjiswobrmdpvz.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6Y29memZ3amlzd29icm1kcHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1ODM0NDAsImV4cCI6MjA4NjE1OTQ0MH0.82RKlpOrVMTg3CPZOIx4_R6-6KoK8FUs9mp1i32VBN4"
 );
 
-let currentUser = null;
+let user = null;
 let profile = null;
+let currentThread = null;
 
-/* AUTH */
+async function init(){
+  const { data:{session} } = await supabase.auth.getSession();
+  if(!session) return;
 
-async function register() {
-  const { error } = await supabaseClient.auth.signUp({
-    email: document.getElementById("regEmail").value,
-    password: document.getElementById("regPassword").value,
-    options: { emailRedirectTo: window.location.origin }
-  });
+  user = session.user;
 
-  if (error) alert(error.message);
-  else alert("Check your email to confirm.");
+  const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  profile = data;
+
+  document.getElementById("authPage").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("authArea").innerHTML =
+    profile.username + " | <button onclick='logout()'>Logout</button>";
+
+  if(profile.role === "admin"){
+    document.getElementById("devCreate").classList.remove("hidden");
+  }
+
+  loadThreads();
+  loadGroups();
+  loadDev();
+  loadProfile();
 }
 
-async function login() {
-  const { error } = await supabaseClient.auth.signInWithPassword({
-    email: document.getElementById("loginEmail").value,
-    password: document.getElementById("loginPassword").value
+async function register(){
+  const email = regEmail.value;
+  const pass = regPass.value;
+  const username = regUser.value;
+
+  const { data, error } = await supabase.auth.signUp({
+    email, password: pass,
+    options:{ emailRedirectTo: window.location.origin }
   });
 
-  if (error) alert(error.message);
+  if(error) return alert(error.message);
+
+  await supabase.from("profiles").insert({
+    id:data.user.id,
+    username
+  });
+
+  alert("Check email to confirm.");
+}
+
+async function login(){
+  const { error } = await supabase.auth.signInWithPassword({
+    email:loginEmail.value,
+    password:loginPass.value
+  });
+  if(error) alert(error.message);
   else location.reload();
 }
 
-async function init() {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) return;
-
-  currentUser = session.user;
-
-  document.getElementById("auth").classList.add("hidden");
-  document.getElementById("app").classList.remove("hidden");
-
-  loadChat();
-  setupRealtime();
+async function logout(){
+  await supabase.auth.signOut();
+  location.reload();
 }
 
-/* CHAT */
-
-function setupRealtime() {
-  supabaseClient.channel("chat-live")
-    .on("postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_messages" },
-      payload => addMessage(payload.new)
-    )
-    .subscribe();
+async function createThread(){
+  await supabase.from("threads").insert({
+    title:threadTitle.value,
+    description:threadDesc.value,
+    author:user.id,
+    category:"general"
+  });
+  threadTitle.value="";
+  threadDesc.value="";
+  loadThreads();
 }
 
-function addMessage(msg) {
-  const chat = document.getElementById("chat");
-  chat.innerHTML += `<div><b>${msg.username}</b>: ${msg.content}</div>`;
+async function loadThreads(){
+  const { data } = await supabase.from("threads").select("*").order("created_at",{ascending:false});
+  threadList.innerHTML="";
+  data.forEach(t=>{
+    threadList.innerHTML+=`
+    <div class="thread" onclick="openThread('${t.id}')">
+      <strong>${t.title}</strong>
+      <div class="small">${t.description}</div>
+    </div>`;
+  });
 }
 
-async function loadChat() {
-  const { data } = await supabaseClient
-    .from("chat_messages")
-    .select("*")
-    .order("created_at");
+async function openThread(id){
+  currentThread=id;
+  homeTab.classList.add("hidden");
+  threadView.classList.remove("hidden");
 
-  document.getElementById("chat").innerHTML = "";
-  data.forEach(addMessage);
-}
+  const { data:thread } = await supabase.from("threads").select("*").eq("id",id).single();
+  const { data:replies } = await supabase.from("replies").select("*").eq("thread_id",id).order("created_at");
 
-async function sendChat() {
-  await supabaseClient.from("chat_messages").insert({
-    user_id: currentUser.id,
-    username: currentUser.email,
-    content: document.getElementById("chatInput").value
+  threadView.innerHTML=`
+  <div class="card">
+    <button onclick="closeThread()">← Back</button>
+    <h2>${thread.title}</h2>
+    <p>${thread.description}</p>
+  </div>
+  <div class="card">
+    <div id="replyList"></div>
+    <textarea id="replyInput"></textarea>
+    <button onclick="sendReply()">Reply</button>
+  </div>`;
+
+  replies.forEach(r=>{
+    replyList.innerHTML+=`<div class="reply">${r.content}</div>`;
   });
 
-  document.getElementById("chatInput").value = "";
+  setupRealtimeReplies();
 }
 
-/* EVENTS */
+function closeThread(){
+  threadView.classList.add("hidden");
+  homeTab.classList.remove("hidden");
+}
 
-document.getElementById("loginBtn").addEventListener("click", login);
-document.getElementById("registerBtn").addEventListener("click", register);
-document.getElementById("chatBtn").addEventListener("click", sendChat);
+async function sendReply(){
+  await supabase.from("replies").insert({
+    thread_id:currentThread,
+    author:user.id,
+    content:replyInput.value
+  });
+  replyInput.value="";
+}
+
+function setupRealtimeReplies(){
+  supabase.channel("replies-live")
+  .on("postgres_changes",{event:"INSERT",schema:"public",table:"replies"},
+    payload=>{
+      if(payload.new.thread_id===currentThread){
+        replyList.innerHTML+=`<div class="reply">${payload.new.content}</div>`;
+      }
+    })
+  .subscribe();
+}
+
+async function loadGroups(){
+  const { data } = await supabase.from("groups").select("*");
+  groupsTab.innerHTML="";
+  data.forEach(g=>{
+    groupsTab.innerHTML+=`
+    <div class="card">
+      <img src="${g.logo}" width="50">
+      <h4>${g.name}</h4>
+      <button onclick="joinGroup('${g.id}')">Request Join</button>
+    </div>`;
+  });
+}
+
+async function joinGroup(id){
+  await supabase.from("group_members").insert({
+    group_id:id,
+    user_id:user.id
+  });
+  alert("Request sent.");
+}
+
+async function loadDev(){
+  const { data } = await supabase.from("threads").select("*").eq("category","dev");
+  devList.innerHTML="";
+  data.forEach(d=>{
+    devList.innerHTML+=`<div class="card"><h3>${d.title}</h3><p>${d.description}</p></div>`;
+  });
+}
+
+async function postDev(){
+  await supabase.from("threads").insert({
+    title:devTitle.value,
+    description:devDesc.value,
+    author:user.id,
+    category:"dev"
+  });
+  loadDev();
+}
+
+async function loadProfile(){
+  profileTab.innerHTML=`
+  <div class="card">
+    <h3>${profile.username}</h3>
+    <p>Role: ${profile.role}</p>
+    <p>Joined: ${new Date(profile.created_at).toLocaleDateString()}</p>
+  </div>`;
+}
+
+function showTab(tab){
+  ["homeTab","groupsTab","devTab","profileTab"].forEach(t=>{
+    document.getElementById(t).classList.add("hidden");
+  });
+  document.getElementById(tab+"Tab").classList.remove("hidden");
+}
 
 init();
-
-})();
 </script>
 
 </body>
