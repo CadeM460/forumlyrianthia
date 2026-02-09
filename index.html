@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Lyrianthian Forums</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body { background:#0b0f14; color:white; font-family:Arial; margin:0; }
+.card { background:#111; padding:15px; margin:15px; border-radius:8px; }
+.hidden { display:none; }
+.chat { height:200px; overflow-y:auto; background:#1a1f26; padding:10px; }
+button { padding:6px 10px; margin-top:5px; cursor:pointer; }
+input { padding:6px; width:100%; margin:5px 0; }
+</style>
+</head>
+<body>
+
+<div id="auth">
+  <div class="card">
+    <h3>Login</h3>
+    <input id="loginEmail" placeholder="Email">
+    <input id="loginPassword" type="password" placeholder="Password">
+    <button id="loginBtn">Login</button>
+  </div>
+
+  <div class="card">
+    <h3>Register</h3>
+    <input id="regEmail" placeholder="Email">
+    <input id="regPassword" type="password" placeholder="Password">
+    <button id="registerBtn">Register</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="card">
+    <h3>Chat</h3>
+    <div id="chat" class="chat"></div>
+    <input id="chatInput">
+    <button id="chatBtn">Send</button>
+  </div>
+</div>
+
+<script>
+(function(){
+
+// Prevent duplicate declaration
+if (window._supabaseInitialized) return;
+window._supabaseInitialized = true;
+
+const supabaseClient = window.supabase.createClient(
+  "https://vzcofzfwjiswobrmdpvz.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6Y29memZ3amlzd29icm1kcHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1ODM0NDAsImV4cCI6MjA4NjE1OTQ0MH0.82RKlpOrVMTg3CPZOIx4_R6-6KoK8FUs9mp1i32VBN4"
+);
+
+let currentUser = null;
+let profile = null;
+
+/* AUTH */
+
+async function register() {
+  const { error } = await supabaseClient.auth.signUp({
+    email: document.getElementById("regEmail").value,
+    password: document.getElementById("regPassword").value,
+    options: { emailRedirectTo: window.location.origin }
+  });
+
+  if (error) alert(error.message);
+  else alert("Check your email to confirm.");
+}
+
+async function login() {
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email: document.getElementById("loginEmail").value,
+    password: document.getElementById("loginPassword").value
+  });
+
+  if (error) alert(error.message);
+  else location.reload();
+}
+
+async function init() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+
+  currentUser = session.user;
+
+  document.getElementById("auth").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+
+  loadChat();
+  setupRealtime();
+}
+
+/* CHAT */
+
+function setupRealtime() {
+  supabaseClient.channel("chat-live")
+    .on("postgres_changes",
+      { event: "INSERT", schema: "public", table: "chat_messages" },
+      payload => addMessage(payload.new)
+    )
+    .subscribe();
+}
+
+function addMessage(msg) {
+  const chat = document.getElementById("chat");
+  chat.innerHTML += `<div><b>${msg.username}</b>: ${msg.content}</div>`;
+}
+
+async function loadChat() {
+  const { data } = await supabaseClient
+    .from("chat_messages")
+    .select("*")
+    .order("created_at");
+
+  document.getElementById("chat").innerHTML = "";
+  data.forEach(addMessage);
+}
+
+async function sendChat() {
+  await supabaseClient.from("chat_messages").insert({
+    user_id: currentUser.id,
+    username: currentUser.email,
+    content: document.getElementById("chatInput").value
+  });
+
+  document.getElementById("chatInput").value = "";
+}
+
+/* EVENTS */
+
+document.getElementById("loginBtn").addEventListener("click", login);
+document.getElementById("registerBtn").addEventListener("click", register);
+document.getElementById("chatBtn").addEventListener("click", sendChat);
+
+init();
+
+})();
+</script>
+
+</body>
+</html>
