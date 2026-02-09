@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>Lyrianthia Forum</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Supabase (ONLY ONCE) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
@@ -17,53 +19,44 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
 .chat { height:250px; overflow-y:auto; background:#1a1f26; padding:10px; }
 .thread { padding:8px; border-bottom:1px solid #333; cursor:pointer; }
 .thread:hover { background:#1a1f26; }
-.group { padding:6px; border-bottom:1px solid #333; }
 </style>
 </head>
 <body>
 
-<nav id="topNav" class="hidden">
+<nav id="nav" class="hidden">
   <span id="tabProfile">Profile</span>
-  <span id="tabGroups">Groups</span>
   <span id="tabForum">Forum</span>
-  <span id="tabDev">Development Updates</span>
   <span id="logoutBtn">Logout</span>
 </nav>
 
 <div id="auth">
   <div class="card">
     <h3>Login</h3>
-    <input id="loginUser" placeholder="Email">
-    <input id="loginPass" type="password" placeholder="Password">
+    <input id="loginEmail" placeholder="Email">
+    <input id="loginPassword" type="password" placeholder="Password">
     <button id="loginBtn">Login</button>
   </div>
 
   <div class="card">
     <h3>Register</h3>
-    <input id="regUser" placeholder="Email">
-    <input id="regPass" type="password" placeholder="Password">
-    <input id="invite" placeholder="Invite Code">
+    <input id="regEmail" placeholder="Email">
+    <input id="regPassword" type="password" placeholder="Password">
     <button id="registerBtn">Register</button>
   </div>
 </div>
 
 <div id="app" class="hidden">
 
-<div id="profileTab" class="tab card">
+<div id="profileTab" class="card">
   <h3>Profile</h3>
   Email: <span id="profileEmail"></span><br>
   Username: <span id="profileUsername"></span><br>
   Role: <span id="profileRole"></span>
 </div>
 
-<div id="groupsTab" class="tab card hidden">
-  <h3>Groups</h3>
-  <div id="groupsList"></div>
-</div>
-
-<div id="forumTab" class="tab card hidden">
+<div id="forumTab" class="card hidden">
   <h3>Create Thread</h3>
-  <input id="threadTitle" placeholder="Title">
+  <input id="threadTitle" placeholder="Thread Title">
   <textarea id="threadDesc" placeholder="Description"></textarea>
   <button id="createThreadBtn">Create</button>
 
@@ -79,15 +72,6 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
   </div>
 </div>
 
-<div id="devTab" class="tab card hidden">
-  <h3>Post Update (Admins Only)</h3>
-  <div id="devCreate" class="hidden">
-    <textarea id="devContent"></textarea>
-    <button id="devPostBtn">Post</button>
-  </div>
-  <div id="devPosts"></div>
-</div>
-
 <div class="card">
   <h3>Global Chat</h3>
   <div id="chat" class="chat"></div>
@@ -98,48 +82,56 @@ input, textarea { padding:6px; width:100%; margin:5px 0; }
 </div>
 
 <script>
+/* ================================
+   SUPABASE INIT (ONLY HERE ONCE)
+================================ */
+
 const supabase = window.supabase.createClient(
   "https://vzcofzfwjiswobrmdpvz.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6Y29memZ3amlzd29icm1kcHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1ODM0NDAsImV4cCI6MjA4NjE1OTQ0MH0.82RKlpOrVMTg3CPZOIx4_R6-6KoK8FUs9mp1i32VBN4"
 );
 
-let currentUser, profile, activeThread;
+let currentUser = null;
+let profile = null;
+let activeThread = null;
 
-/* ---------- TAB SWITCH ---------- */
-function showTab(id){
-  document.querySelectorAll(".tab").forEach(t=>t.classList.add("hidden"));
-  document.getElementById(id).classList.remove("hidden");
-}
+/* ================================
+   AUTH
+================================ */
 
-/* ---------- AUTH ---------- */
-async function register(){
+async function register() {
   const { error } = await supabase.auth.signUp({
-    email: regUser.value,
-    password: regPass.value,
+    email: document.getElementById("regEmail").value,
+    password: document.getElementById("regPassword").value,
     options: { emailRedirectTo: window.location.origin }
   });
-  if(error) alert(error.message);
+
+  if (error) alert(error.message);
   else alert("Check your email to confirm.");
 }
 
-async function login(){
+async function login() {
   const { error } = await supabase.auth.signInWithPassword({
-    email: loginUser.value,
-    password: loginPass.value
+    email: document.getElementById("loginEmail").value,
+    password: document.getElementById("loginPassword").value
   });
-  if(error) alert(error.message);
+
+  if (error) alert(error.message);
   else location.reload();
 }
 
-async function logout(){
+async function logout() {
   await supabase.auth.signOut();
   location.reload();
 }
 
-/* ---------- INIT ---------- */
-async function init(){
-  const { data:{ session } } = await supabase.auth.getSession();
-  if(!session) return;
+/* ================================
+   INIT USER
+================================ */
+
+async function init() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
 
   currentUser = session.user;
 
@@ -149,11 +141,11 @@ async function init(){
     .eq("id", currentUser.id)
     .single();
 
-  if(!existing){
+  if (!existing) {
     await supabase.from("profiles").insert({
       id: currentUser.id,
       username: currentUser.email.split("@")[0],
-      role:"user"
+      role: "user"
     });
   }
 
@@ -165,187 +157,156 @@ async function init(){
 
   profile = data;
 
-  auth.classList.add("hidden");
-  app.classList.remove("hidden");
-  topNav.classList.remove("hidden");
+  document.getElementById("auth").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("nav").classList.remove("hidden");
 
-  profileEmail.innerText = currentUser.email;
-  profileUsername.innerText = profile.username;
-  profileRole.innerText = profile.role;
-
-  if(profile.role === "admin"){
-    devCreate.classList.remove("hidden");
-  }
+  document.getElementById("profileEmail").innerText = currentUser.email;
+  document.getElementById("profileUsername").innerText = profile.username;
+  document.getElementById("profileRole").innerText = profile.role;
 
   loadThreads();
   loadChat();
-  loadGroups();
-  loadDev();
   setupRealtime();
 }
 
-/* ---------- REALTIME ---------- */
-function setupRealtime(){
+/* ================================
+   REALTIME CHAT
+================================ */
+
+function setupRealtime() {
   supabase.channel("chat-live")
-  .on("postgres_changes",
-    { event:"INSERT", schema:"public", table:"chat_messages" },
-    payload => addChat(payload.new)
-  ).subscribe();
+    .on("postgres_changes",
+      { event: "INSERT", schema: "public", table: "chat_messages" },
+      payload => addChatMessage(payload.new)
+    )
+    .subscribe();
 }
 
-function addChat(msg){
+function addChatMessage(msg) {
+  const chat = document.getElementById("chat");
   chat.innerHTML += `<div><b>${msg.username}</b>: ${msg.content}</div>`;
   chat.scrollTop = chat.scrollHeight;
 }
 
-async function loadChat(){
+async function loadChat() {
   const { data } = await supabase
     .from("chat_messages")
     .select("*")
     .order("created_at");
 
-  chat.innerHTML="";
-  data.forEach(addChat);
+  document.getElementById("chat").innerHTML = "";
+  data.forEach(addChatMessage);
 }
 
-async function sendChat(){
-  if(profile.chatbanned) return alert("Chat banned.");
-
+async function sendChat() {
   await supabase.from("chat_messages").insert({
     user_id: currentUser.id,
     username: profile.username,
-    content: chatInput.value
+    content: document.getElementById("chatInput").value
   });
 
-  chatInput.value="";
+  document.getElementById("chatInput").value = "";
 }
 
-/* ---------- THREADS ---------- */
-async function createThread(){
+/* ================================
+   THREADS
+================================ */
+
+async function createThread() {
   await supabase.from("threads").insert({
-    title: threadTitle.value,
-    description: threadDesc.value,
+    title: document.getElementById("threadTitle").value,
+    description: document.getElementById("threadDesc").value,
     creator_id: currentUser.id
   });
-  threadTitle.value="";
-  threadDesc.value="";
+
+  document.getElementById("threadTitle").value = "";
+  document.getElementById("threadDesc").value = "";
+
   loadThreads();
 }
 
-async function loadThreads(){
+async function loadThreads() {
   const { data } = await supabase
     .from("threads")
     .select("*")
-    .order("created_at",{ascending:false});
+    .order("created_at", { ascending: false });
 
-  threads.innerHTML="";
-  data.forEach(t=>{
-    const div=document.createElement("div");
-    div.className="thread";
-    div.innerHTML=`<b>${t.title}</b><br>${t.description}`;
-    div.addEventListener("click",()=>openThread(t.id));
-    threads.appendChild(div);
+  const container = document.getElementById("threads");
+  container.innerHTML = "";
+
+  data.forEach(thread => {
+    const div = document.createElement("div");
+    div.className = "thread";
+    div.innerHTML = `<b>${thread.title}</b><br>${thread.description}`;
+    div.addEventListener("click", () => openThread(thread.id));
+    container.appendChild(div);
   });
 }
 
-async function openThread(id){
-  activeThread=id;
+async function openThread(id) {
+  activeThread = id;
+
   const { data } = await supabase
     .from("threads")
     .select("*")
-    .eq("id",id)
+    .eq("id", id)
     .single();
 
-  viewTitle.innerText=data.title;
-  viewDesc.innerText=data.description;
-  threadView.classList.remove("hidden");
+  document.getElementById("threadView").classList.remove("hidden");
+  document.getElementById("viewTitle").innerText = data.title;
+  document.getElementById("viewDesc").innerText = data.description;
+
   loadPosts();
 }
 
-async function loadPosts(){
+async function loadPosts() {
   const { data } = await supabase
     .from("posts")
     .select("*")
-    .eq("thread_id",activeThread)
+    .eq("thread_id", activeThread)
     .order("created_at");
 
-  posts.innerHTML="";
-  data.forEach(p=>{
-    posts.innerHTML+=`<div><b>${p.username}</b>: ${p.content}</div>`;
+  const postsDiv = document.getElementById("posts");
+  postsDiv.innerHTML = "";
+
+  data.forEach(post => {
+    postsDiv.innerHTML += `<div><b>${post.username}</b>: ${post.content}</div>`;
   });
 }
 
-async function reply(){
+async function reply() {
   await supabase.from("posts").insert({
-    thread_id:activeThread,
-    author_id:currentUser.id,
-    username:profile.username,
-    content:replyBox.value
+    thread_id: activeThread,
+    author_id: currentUser.id,
+    username: profile.username,
+    content: document.getElementById("replyBox").value
   });
-  replyBox.value="";
+
+  document.getElementById("replyBox").value = "";
   loadPosts();
 }
 
-/* ---------- GROUPS ---------- */
-async function loadGroups(){
-  const { data } = await supabase.from("groups").select("*");
-  groupsList.innerHTML="";
-  data.forEach(g=>{
-    const div=document.createElement("div");
-    div.className="group";
-    div.innerHTML=`<img src="${g.logo}" width="30"> ${g.name}`;
-    const btn=document.createElement("button");
-    btn.textContent="Request";
-    btn.addEventListener("click",()=>requestJoin(g.id));
-    div.appendChild(btn);
-    groupsList.appendChild(div);
-  });
-}
+/* ================================
+   EVENTS (NO INLINE JS)
+================================ */
 
-async function requestJoin(groupId){
-  await supabase.from("group_requests").insert({
-    user_id:currentUser.id,
-    group_id:groupId
-  });
-  alert("Request sent.");
-}
+document.getElementById("loginBtn").addEventListener("click", login);
+document.getElementById("registerBtn").addEventListener("click", register);
+document.getElementById("logoutBtn").addEventListener("click", logout);
+document.getElementById("chatBtn").addEventListener("click", sendChat);
+document.getElementById("createThreadBtn").addEventListener("click", createThread);
+document.getElementById("replyBtn").addEventListener("click", reply);
 
-/* ---------- DEV UPDATES ---------- */
-async function postDev(){
-  if(profile.role!=="admin") return;
+document.getElementById("tabProfile").addEventListener("click", () => {
+  document.getElementById("profileTab").classList.remove("hidden");
+  document.getElementById("forumTab").classList.add("hidden");
+});
 
-  await supabase.from("dev_updates").insert({
-    content:devContent.value
-  });
-  devContent.value="";
-  loadDev();
-}
-
-async function loadDev(){
-  const { data } = await supabase
-    .from("dev_updates")
-    .select("*")
-    .order("created_at",{ascending:false});
-
-  devPosts.innerHTML="";
-  data.forEach(d=>{
-    devPosts.innerHTML+=`<div>${d.content}</div><hr>`;
-  });
-}
-
-/* ---------- EVENTS ---------- */
-document.getElementById("loginBtn").addEventListener("click",login);
-document.getElementById("registerBtn").addEventListener("click",register);
-document.getElementById("logoutBtn").addEventListener("click",logout);
-document.getElementById("chatBtn").addEventListener("click",sendChat);
-document.getElementById("createThreadBtn").addEventListener("click",createThread);
-document.getElementById("replyBtn").addEventListener("click",reply);
-document.getElementById("devPostBtn").addEventListener("click",postDev);
-
-document.getElementById("tabProfile").addEventListener("click",()=>showTab("profileTab"));
-document.getElementById("tabGroups").addEventListener("click",()=>showTab("groupsTab"));
-document.getElementById("tabForum").addEventListener("click",()=>showTab("forumTab"));
-document.getElementById("tabDev").addEventListener("click",()=>showTab("devTab"));
+document.getElementById("tabForum").addEventListener("click", () => {
+  document.getElementById("forumTab").classList.remove("hidden");
+  document.getElementById("profileTab").classList.add("hidden");
+});
 
 init();
 </script>
